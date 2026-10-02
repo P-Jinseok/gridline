@@ -455,9 +455,9 @@ const CAP = {
 };
 const COST = {
   road:10, bulldoze:5,
-  coal:5000, wind:3000, fire:2500, police:2500, park:500,
+  coal:5000, wind:3000, fire:2500, police:2500, school:1800, hospital:2200, park:500,
 };
-const UPKEEP = {coal:500, wind:150, fire:220, police:220, park:25};
+const UPKEEP = {coal:500, wind:150, fire:220, police:220, school:180, hospital:220, park:25};
 const PLANT_CAP = {coal:420, wind:110};
 
 /* ============================== I18N ============================== */
@@ -476,11 +476,12 @@ const I18N = {
     toolSelect:'Select / Inspect', toolRoad:'Road — §10/tile', toolBulldoze:'Bulldoze',
     toolZoneR:'Residential zone', toolZoneC:'Commercial zone', toolZoneI:'Industrial zone',
     toolCoal:'Coal plant — §5,000', toolWind:'Wind turbine — §3,000',
-    toolFire:'Fire station — §2,500', toolPolice:'Police station — §2,500', toolPark:'Park — §500',
+    toolFire:'Fire station — §2,500', toolPolice:'Police station — §2,500',
+    toolSchool:'School — §1,800', toolHospital:'Hospital — §2,200', toolPark:'Park — §500',
     helpTitle:'Welcome to Gridline',
     helpIntro:"You're laying out a city on an empty grid. Roads unlock growth, zones invite builders, power keeps the lights on, and tax policy pays the bills.",
     helpMouse:'Drag to paint roads & zones. Drag with the Select tool, or the right mouse button, to pan the camera. Scroll to zoom.',
-    helpTouch:"On touch: drag to stage roads & zones — nothing is built yet. Tap ✓ to confirm and pay, or ✕ to cancel. Two fingers always pan & pinch-zoom.",
+    helpTouch:"On touch: dragging always moves the map. Tap a tile to stage it (nothing is built yet) — tap ✓ to confirm and pay, or ✕ to cancel. Pinch with two fingers to zoom.",
     helpPower:"Zoned lots only grow once they're powered and touch a road. Watch the demand bars — tax rates push demand up or down.",
     helpFire:'Dense, unpoliced, unfirefought blocks risk fires and blight. Civic buildings cover a radius around them.',
     helpPanel:'Tap the panel icon in the top bar any time to show or hide the stats drawer (demand, budget) and free up the map.',
@@ -506,7 +507,8 @@ const I18N = {
     toastTileBlocked:'Tile is not clear',
     inspectWater:'Water', inspectOpen:'Open land', inspectVacant:'vacant lot',
     inspectCoal:'Coal plant', inspectWind:'Wind turbine', inspectRoad:'Road',
-    inspectFireStation:'Fire station', inspectPolice:'Police station', inspectPark:'Park',
+    inspectFireStation:'Fire station', inspectPolice:'Police station',
+    inspectSchool:'School', inspectHospital:'Hospital', inspectPark:'Park',
     tile:'Tile', landValue:'Land value', pollution:'Pollution', power:'Power',
     online:'Online', none:'None', residents:'Residents', jobs:'Jobs', fireInProgress:'Fire in progress',
   },
@@ -524,11 +526,12 @@ const I18N = {
     toolSelect:'선택 / 조회', toolRoad:'도로 — 타일당 §10', toolBulldoze:'철거',
     toolZoneR:'주거 지역', toolZoneC:'상업 지역', toolZoneI:'공업 지역',
     toolCoal:'석탄 발전소 — §5,000', toolWind:'풍력 발전기 — §3,000',
-    toolFire:'소방서 — §2,500', toolPolice:'경찰서 — §2,500', toolPark:'공원 — §500',
+    toolFire:'소방서 — §2,500', toolPolice:'경찰서 — §2,500',
+    toolSchool:'학교 — §1,800', toolHospital:'병원 — §2,200', toolPark:'공원 — §500',
     helpTitle:'그리드라인에 오신 것을 환영합니다',
     helpIntro:'빈 격자 위에 도시를 설계합니다. 도로는 성장을 열어주고, 지역을 지정하면 건물이 들어서고, 전력은 불을 밝히며, 세율이 재정을 책임집니다.',
     helpMouse:'드래그로 도로와 지역을 칠하세요. 선택 도구로 드래그하거나 마우스 오른쪽 버튼을 드래그하면 화면을 이동합니다. 스크롤로 확대/축소합니다.',
-    helpTouch:'터치: 드래그하면 도로·구역이 먼저 임시로 칠해지고 아직 적용되지 않습니다. ✓를 눌러 확정·결제하거나 ✕로 취소하세요. 두 손가락은 항상 화면 이동과 핀치 줌입니다.',
+    helpTouch:'터치: 드래그는 항상 지도를 이동합니다. 타일을 탭하면 임시로 칠해지고(아직 적용 전) ✓로 확정·결제하거나 ✕로 취소하세요. 두 손가락으로 핀치하면 확대/축소됩니다.',
     helpPower:'지정된 구역은 전력이 들어오고 도로와 맞닿아야만 성장합니다. 세율이 수요 막대를 밀어 올리거나 끌어내리는 것을 확인하세요.',
     helpFire:'밀집도가 높은데 소방·치안이 부족한 구역은 화재와 슬럼화 위험이 있습니다. 공공시설은 주변 반경을 커버합니다.',
     helpPanel:'상단의 패널 아이콘을 언제든 탭하면 수요·재정 같은 상황판을 열고 닫아 지도 공간을 넓힐 수 있습니다.',
@@ -554,7 +557,8 @@ const I18N = {
     toastTileBlocked:'타일이 비어있지 않습니다',
     inspectWater:'물', inspectOpen:'빈 땅', inspectVacant:'공터',
     inspectCoal:'석탄 발전소', inspectWind:'풍력 발전기', inspectRoad:'도로',
-    inspectFireStation:'소방서', inspectPolice:'경찰서', inspectPark:'공원',
+    inspectFireStation:'소방서', inspectPolice:'경찰서',
+    inspectSchool:'학교', inspectHospital:'병원', inspectPark:'공원',
     tile:'타일', landValue:'지가', pollution:'오염도', power:'전력',
     online:'공급중', none:'없음', residents:'주민', jobs:'일자리', fireInProgress:'화재 발생 중',
   },
@@ -581,8 +585,8 @@ function setLang(l){
 }
 
 /* ============================== STATE ============================== */
-let grid, waterBonus, fireCov, policeCov, parkCov, pollutionF, claimedBuf;
-let cam = {x:GRID/2, y:GRID/2, zoom:1.05};
+let grid, waterBonus, fireCov, policeCov, parkCov, schoolCov, hospitalCov, pollutionF, claimedBuf;
+let cam = {x:GRID/2, y:GRID/2, zoom:1.4};
 let funds = 50000, loan = 0;
 let taxRates = {R:9, C:9, I:9};
 let simDay = 0; // continuous
@@ -657,6 +661,8 @@ function genWorld(){
   fireCov = new Float32Array(GRID*GRID);
   policeCov = new Float32Array(GRID*GRID);
   parkCov = new Float32Array(GRID*GRID);
+  schoolCov = new Float32Array(GRID*GRID);
+  hospitalCov = new Float32Array(GRID*GRID);
   pollutionF = new Float32Array(GRID*GRID);
   claimedBuf = new Uint8Array(GRID*GRID);
   plantOrder = [];
@@ -733,12 +739,14 @@ function scatterRadius(buf, x0,y0, radius, strength){
   }
 }
 function updateCoverageAndPollution(){
-  fireCov.fill(0); policeCov.fill(0); parkCov.fill(0);
+  fireCov.fill(0); policeCov.fill(0); parkCov.fill(0); schoolCov.fill(0); hospitalCov.fill(0);
   for(let i=0;i<pollutionF.length;i++) pollutionF[i]*=0.86;
   for(let y=0;y<GRID;y++) for(let x=0;x<GRID;x++){
     const t = grid[idx(x,y)];
     if(t.type==='civic' && t.kind==='fire') scatterRadius(fireCov,x,y,7,1);
     if(t.type==='civic' && t.kind==='police') scatterRadius(policeCov,x,y,7,1);
+    if(t.type==='civic' && t.kind==='school') scatterRadius(schoolCov,x,y,6,1);
+    if(t.type==='civic' && t.kind==='hospital') scatterRadius(hospitalCov,x,y,6,1);
     if(t.type==='park') scatterRadius(parkCov,x,y,4,1);
     if(t.type==='plant' && t.kind==='coal') scatterRadius(pollutionF,x,y,5,46);
     if(t.type==='zone' && t.zone==='I' && t.level>0) scatterRadius(pollutionF,x,y,3,14*t.level);
@@ -766,16 +774,19 @@ function computeDemand(){
   totals = {rpop,rcap,cCap,cFilled,iCap,iFilled,road,
     avgLV: lvN? lvSum/lvN : 0, avgPol: lvN? polSum/lvN : 0};
 
-  const exportWave = 15*Math.sin(simDay/160*Math.PI)+12;
+  // Export demand always has a positive floor so industry can bootstrap from day one;
+  // residential/commercial cascade off jobs/population so a small city isn't stuck waiting
+  // on a threshold it can never mathematically reach.
+  const exportWave = 22 + 16*Math.sin(simDay/150*Math.PI); // 6..38, always positive
   const jobsTotal = cCap+iCap;
-  const pen = k => (taxRates[k]-7)*3.1;
-  demand.R = clamp((jobsTotal-rpop)*1.05 - pen('R'), -100, 100);
-  demand.C = clamp((rpop*0.34 - cCap)*1.35 - pen('C'), -100, 100);
-  demand.I = clamp((rpop*0.5 + exportWave - iCap)*0.95 - pen('I'), -100, 100);
+  const taxAdj = k => (9 - taxRates[k]) * 2; // 9% is neutral; lower taxes push demand up, higher pull it down
+  demand.R = clamp((jobsTotal - rpop) * 1.4 + taxAdj('R'), -100, 100);
+  demand.C = clamp((rpop * 0.5 - cCap) * 1.6 + taxAdj('C'), -100, 100);
+  demand.I = clamp((rpop * 0.6 + exportWave - iCap) * 1.1 + taxAdj('I'), -100, 100);
 }
 
 /* ============================== GROWTH / DECAY ============================== */
-function growthChance(d, lv){ return clamp(d/100,0,1)*0.42 + clamp(lv/100,0,1)*0.06 + 0.015; }
+function growthChance(d, lv){ return clamp(d/60,0,1)*0.5 + clamp(lv/100,0,1)*0.08 + 0.02; }
 
 function maybeFire(t,x,y){
   if(t.level===0 || t.fire) return;
@@ -797,8 +808,8 @@ function weeklyPass(){
     if(t.type!=='zone') continue;
     const kind = t.zone;
     const roadAdj = hasAdjacentRoad(x,y);
-    const target = clamp(30 + waterBonus[i] + parkCov[i]*18 + policeCov[i]*12
-      - t.pollution*0.55 - (kind==='I'?8:0) + (roadAdj?6:0), 0, 100);
+    const target = clamp(30 + waterBonus[i] + parkCov[i]*18 + policeCov[i]*12 + schoolCov[i]*10 + hospitalCov[i]*10
+      - t.pollution*0.55*(1-hospitalCov[i]*0.5) - (kind==='I'?8:0) + (roadAdj?6:0), 0, 100);
     t.landValue = lerp(t.landValue, target, 0.1);
 
     if(!roadAdj){
@@ -806,16 +817,17 @@ function weeklyPass(){
       continue;
     }
     const d = demand[kind];
+    const gc = growthChance(d,t.landValue) * (kind==='R' ? (1+schoolCov[i]*0.4) : 1);
     if(t.level===0){
-      if(t.powered && d>8 && Math.random() < growthChance(d,t.landValue)){
+      if(t.powered && d>0 && Math.random() < gc){
         t.level = 1; t.occupancy = capacityFor(kind,1)*0.3;
       }
     } else {
       const cap = capacityFor(kind,t.level);
       const targetFrac = t.powered ? clamp(0.3 + d/90, 0.08, 1) : 0.04;
       t.occupancy = lerp(t.occupancy, cap*targetFrac, 0.3);
-      if(t.level<3 && t.powered && d>28 && t.occupancy>cap*0.8 && t.landValue>=landReq(kind,t.level+1)
-         && Math.random()<growthChance(d,t.landValue)){
+      if(t.level<3 && t.powered && d>(18+t.level*12) && t.occupancy>cap*0.75 && t.landValue>=landReq(kind,t.level+1)
+         && Math.random()<gc){
         t.level++; t.occupancy = capacityFor(kind,t.level)*0.55;
       } else if(t.occupancy < cap*0.1 && Math.random()<0.28){
         t.level = Math.max(0,t.level-1);
@@ -905,7 +917,7 @@ function placeSingle(x,y, what){
   if(!canAfford(cost)) return;
   funds -= cost;
   if(what==='coal'||what==='wind'){ t.type='plant'; t.kind=what; plantOrder.push(idx(x,y)); }
-  else if(what==='fire'||what==='police'){ t.type='civic'; t.kind=what; }
+  else if(what==='fire'||what==='police'||what==='school'||what==='hospital'){ t.type='civic'; t.kind=what; }
   else if(what==='park'){ t.type='park'; }
   recomputePower();
 }
@@ -935,7 +947,7 @@ function applyToolAt(x,y){
       }
       break;
     }
-    case 'coal': case 'wind': case 'fire': case 'police': case 'park':
+    case 'coal': case 'wind': case 'fire': case 'police': case 'school': case 'hospital': case 'park':
       placeSingle(x,y,currentTool); break;
     default: break;
   }
@@ -968,7 +980,7 @@ function addPendingAt(x,y){
       for(let dy=-half;dy<=half;dy++) for(let dx=-half;dx<=half;dx++) addIfValid(x+dx,y+dy,t=>canPlaceZone(t,kind));
       break;
     }
-    case 'coal': case 'wind': case 'fire': case 'police': case 'park':
+    case 'coal': case 'wind': case 'fire': case 'police': case 'school': case 'hospital': case 'park':
       addIfValid(x,y,canPlaceSingle); break;
     default: break;
   }
@@ -1446,7 +1458,8 @@ function drawCivic(px,py,scale,t){
   ctx.fillRect(px+scale*0.1, bodyTop, scale*0.8, bodyH);
   ctx.strokeStyle='rgba(0,0,0,.1)'; ctx.lineWidth=1; ctx.strokeRect(px+scale*0.1+0.5,bodyTop+0.5,scale*0.8-1,bodyH-1);
 
-  const col = t.kind==='fire' ? '#e2544a' : '#2f8fef';
+  const cols = {fire:'#e2544a', police:'#2f8fef', school:'#8a5cf6', hospital:'#17b3a3'};
+  const col = cols[t.kind];
   ctx.fillStyle = col;
   ctx.fillRect(px+scale*0.1, bodyTop, scale*0.8, scale*0.12);
 
@@ -1459,7 +1472,7 @@ function drawCivic(px,py,scale,t){
     ctx.moveTo(px+scale*0.5,bodyTop+bodyH*0.28);
     ctx.quadraticCurveTo(px+scale*0.64,bodyTop+bodyH*0.46, px+scale*0.5,bodyTop+bodyH*0.68);
     ctx.quadraticCurveTo(px+scale*0.36,bodyTop+bodyH*0.46, px+scale*0.5,bodyTop+bodyH*0.28);
-  } else {
+  } else if(t.kind==='police'){
     ctx.moveTo(px+scale*0.5,bodyTop+bodyH*0.26);
     ctx.lineTo(px+scale*0.64,bodyTop+bodyH*0.34);
     ctx.lineTo(px+scale*0.61,bodyTop+bodyH*0.54);
@@ -1467,6 +1480,15 @@ function drawCivic(px,py,scale,t){
     ctx.lineTo(px+scale*0.39,bodyTop+bodyH*0.54);
     ctx.lineTo(px+scale*0.36,bodyTop+bodyH*0.34);
     ctx.closePath();
+  } else if(t.kind==='school'){
+    ctx.moveTo(px+scale*0.3, bodyTop+bodyH*0.42);
+    ctx.lineTo(px+scale*0.5, bodyTop+bodyH*0.28);
+    ctx.lineTo(px+scale*0.7, bodyTop+bodyH*0.42);
+    ctx.lineTo(px+scale*0.5, bodyTop+bodyH*0.56);
+    ctx.closePath();
+  } else {
+    ctx.rect(px+scale*0.46, bodyTop+bodyH*0.26, scale*0.08, bodyH*0.32);
+    ctx.rect(px+scale*0.38, bodyTop+bodyH*0.38, scale*0.24, bodyH*0.08);
   }
   ctx.fill();
 }
@@ -1604,6 +1626,8 @@ const ICONS = {
   wind:'<path d="M12 21V9"/><path d="M12 9c0-2 1.6-3.4 3.2-2.6C16.4 7 16.4 9 15 9.4 13.6 9.8 12 9 12 9zM12 9c0-2-1.6-3.4-3.2-2.6C7.6 7 7.6 9 9 9.4 10.4 9.8 12 9 12 9z"/>',
   fire:'<path d="M12 3c2 3-1 4-1 7a3 3 0 1 0 6 0c0-1-.5-2-1-2 .3 2-1 2-1 1 0-2-3-3-3-6z"/>',
   police:'<path d="M12 3l7 3v5c0 5-3 8-7 10-4-2-7-5-7-10V6z"/>',
+  school:'<path d="M4 6c2.5-1.5 5.5-1.5 8 0c2.5-1.5 5.5-1.5 8 0v12c-2.5-1.5-5.5-1.5-8 0c-2.5-1.5-5.5-1.5-8 0z"/><path d="M12 6v12"/>',
+  hospital:'<rect x="4" y="4" width="16" height="16" rx="3"/><path d="M12 8v8M8 12h8"/>',
   park:'<path d="M12 21v-6M8 13a4 4 0 1 1 8 0c0 2-2 2-2 2H10s-2 0-2-2z"/><path d="M9 7a3 3 0 1 1 6 0c0 1.6-1.5 2-1.5 2h-3S9 8.6 9 7z"/>',
 };
 const TOOLS = [
@@ -1611,7 +1635,7 @@ const TOOLS = [
   [['road','toolRoad'],['bulldoze','toolBulldoze']],
   [['zoneR','toolZoneR','zone-r'],['zoneC','toolZoneC','zone-c'],['zoneI','toolZoneI','zone-i']],
   [['coal','toolCoal'],['wind','toolWind']],
-  [['fire','toolFire'],['police','toolPolice'],['park','toolPark']],
+  [['fire','toolFire'],['police','toolPolice'],['school','toolSchool'],['hospital','toolHospital'],['park','toolPark']],
 ];
 const BRUSHABLE = new Set(['road','bulldoze','zoneR','zoneC','zoneI']);
 
@@ -1684,7 +1708,7 @@ function buildSpeed(){
 /* ============================== INPUT ============================== */
 let hoverTile = null;
 let pointers = new Map();
-let dragMode = null; // 'paint' | 'pendingPaint' | 'pan' | 'pinch'
+let dragMode = null; // 'paint' | 'pan' | 'pinch'
 let paintPointerId = null;
 let pinchStart = null;
 let downInfo = null;
@@ -1700,13 +1724,12 @@ function onPointerDown(e){
   pointers.set(e.pointerId, {x:e.clientX, y:e.clientY, type:e.pointerType});
   closeInspect();
   if(pointers.size===1){
-    const isPanTrigger = currentTool==='select' || e.button===2 || e.button===1;
+    // Touch always pans on drag (like a map app) — building happens on tap, via onPointerUp,
+    // so one finger never has to fight between "move the camera" and "paint a tile".
+    const isPanTrigger = currentTool==='select' || e.button===2 || e.button===1 || e.pointerType==='touch';
     downInfo = {x:e.clientX, y:e.clientY, moved:false, time:performance.now()};
     if(isPanTrigger){ dragMode='pan'; }
-    else if(e.pointerType==='touch'){
-      dragMode='pendingPaint'; paintPointerId=e.pointerId;
-      const t=tileFromEvent(e); addPendingAt(t.x,t.y);
-    } else {
+    else {
       dragMode='paint'; paintPointerId=e.pointerId; const t=tileFromEvent(e); applyToolAt(t.x,t.y);
     }
   } else if(pointers.size===2){
@@ -1735,9 +1758,6 @@ function onPointerMove(e){
   } else if(dragMode==='paint' && e.pointerId===paintPointerId){
     applyToolAt(t.x,t.y);
     downInfo.moved=true;
-  } else if(dragMode==='pendingPaint' && e.pointerId===paintPointerId){
-    addPendingAt(t.x,t.y);
-    downInfo.moved=true;
   } else if(dragMode==='pinch' && pointers.size===2){
     const pts=[...pointers.values()];
     const dist = Math.hypot(pts[0].x-pts[1].x, pts[0].y-pts[1].y);
@@ -1752,9 +1772,15 @@ function onPointerMove(e){
   }
 }
 function onPointerUp(e){
+  const liftedType = pointers.get(e.pointerId)?.type;
   if(dragMode==='pan' && downInfo && !downInfo.moved){
     const t = tileFromEvent(e);
-    if(currentTool==='select') openInspect(t.x,t.y,e.clientX,e.clientY);
+    if(currentTool==='select'){
+      openInspect(t.x,t.y,e.clientX,e.clientY);
+    } else if(liftedType==='touch'){
+      // a tap (no drag) with a build tool stages one brush-stamp for the confirm bar
+      addPendingAt(t.x,t.y);
+    }
   }
   pointers.delete(e.pointerId);
   if(pointers.size===0){ dragMode=null; paintPointerId=null; downInfo=null; }
@@ -1762,7 +1788,7 @@ function onPointerUp(e){
     const remaining = [...pointers.values()][0];
     const remainingId = [...pointers.keys()][0];
     paintPointerId = remainingId;
-    dragMode = currentTool==='select' ? 'pan' : (remaining.type==='touch' ? 'pendingPaint' : 'paint');
+    dragMode = (currentTool==='select' || remaining.type==='touch') ? 'pan' : 'paint';
   }
 }
 
@@ -1797,7 +1823,7 @@ function openInspect(x,y,sx,sy){
   if(t.type==='road') typeLabel=tr('inspectRoad');
   else if(t.type==='zone') typeLabel = {R:tr('zoneR'),C:tr('zoneC'),I:tr('zoneI')}[t.zone] + (t.level?` · Lv${t.level}`:' · '+tr('inspectVacant'));
   else if(t.type==='plant') typeLabel = t.kind==='coal'?tr('inspectCoal'):tr('inspectWind');
-  else if(t.type==='civic') typeLabel = t.kind==='fire'?tr('inspectFireStation'):tr('inspectPolice');
+  else if(t.type==='civic') typeLabel = {fire:tr('inspectFireStation'),police:tr('inspectPolice'),school:tr('inspectSchool'),hospital:tr('inspectHospital')}[t.kind];
   else if(t.type==='park') typeLabel = tr('inspectPark');
 
   let rows = `<div class="row"><span>${tr('tile')}</span><span>${x}, ${y}</span></div>`;
@@ -1934,7 +1960,7 @@ function saveGameSilent(){
 
 /* ============================== KEYBOARD (desktop convenience) ============================== */
 function wireKeys(){
-  const map = {'1':'select','2':'road','3':'bulldoze','4':'zoneR','5':'zoneC','6':'zoneI','7':'coal','8':'wind','9':'fire','0':'police'};
+  const map = {'1':'select','2':'road','3':'bulldoze','4':'zoneR','5':'zoneC','6':'zoneI','7':'coal','8':'wind','9':'fire','0':'police','s':'school','h':'hospital'};
   window.addEventListener('keydown',e=>{
     if(document.activeElement && ['INPUT','TEXTAREA'].includes(document.activeElement.tagName)) return;
     if(map[e.key]){ const btn = document.querySelector(`.tool-btn[data-tool="${map[e.key]}"]`); if(btn) selectTool(map[e.key],btn); }
