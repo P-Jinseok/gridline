@@ -23,9 +23,9 @@
   --good:#3fae63;
   --warn:#ffb020;
   --bad:#e8505b;
-  --grass:#8ed35a;
-  --grass2:#83c94e;
-  --water:#4fb3e8;
+  --grass:#8fa05f;
+  --grass2:#86975a;
+  --water:#5f90a0;
   --font-display:'Baloo 2',"Segoe UI",sans-serif;
   --font-body:'Nunito',"Segoe UI",sans-serif;
   --font-mono:'IBM Plex Mono',Consolas,monospace;
@@ -444,10 +444,10 @@ input[type=range]{accent-color:var(--accent);}
 
 /* ============================== CONSTANTS ============================== */
 const GRID = 48;
-const TILE = 30;
+const ISO_W = 64, ISO_H = 32; // isometric tile footprint at zoom 1 (2:1 dimetric)
 const DIRS4 = [[1,0],[-1,0],[0,1],[0,-1]];
 const ZONE_COLOR = {R:'var(--zone-r)', C:'var(--zone-c)', I:'var(--zone-i)'};
-const ZONE_HEX = {R:'#43ae53', C:'#2f8fef', I:'#e8793f'};
+const ZONE_HEX = {R:'#5a9a52', C:'#3f7ab8', I:'#c17a3f'};
 const CAP = {
   R:[0,4,10,20],
   C:[0,3,8,16],
@@ -586,7 +586,7 @@ function setLang(l){
 
 /* ============================== STATE ============================== */
 let grid, waterBonus, fireCov, policeCov, parkCov, schoolCov, hospitalCov, pollutionF, claimedBuf;
-let cam = {x:GRID/2, y:GRID/2, zoom:1.4};
+let cam = {x:GRID/2, y:GRID/2, zoom:1.0};
 let funds = 50000, loan = 0;
 let taxRates = {R:9, C:9, I:9};
 let simDay = 0; // continuous
@@ -1044,19 +1044,31 @@ function resizeCanvas(){
   canvasEl.style.height = r.height+'px';
 }
 
+// Isometric (2:1 dimetric) projection. World (x,y) are continuous grid coordinates;
+// screen position is the classic iso rotation: right/left on screen mixes x and y.
 function worldToScreen(wx,wy){
   const r = viewport.getBoundingClientRect();
-  const scale = TILE*cam.zoom;
+  const halfW = ISO_W*cam.zoom/2, halfH = ISO_H*cam.zoom/2;
+  const dxw = wx-cam.x, dyw = wy-cam.y;
   return {
-    x: (wx-cam.x)*scale + r.width/2,
-    y: (wy-cam.y)*scale + r.height/2,
-    scale
+    x: (dxw-dyw)*halfW + r.width/2,
+    y: (dxw+dyw)*halfH + r.height/2,
+    halfW, halfH
   };
 }
 function screenToWorld(sx,sy){
   const r = viewport.getBoundingClientRect();
-  const scale = TILE*cam.zoom;
-  return { x: (sx-r.width/2)/scale + cam.x, y: (sy-r.height/2)/scale + cam.y };
+  const halfW = ISO_W*cam.zoom/2, halfH = ISO_H*cam.zoom/2;
+  const a = (sx-r.width/2)/halfW, b = (sy-r.height/2)/halfH;
+  return { x: cam.x + (a+b)/2, y: cam.y + (b-a)/2, halfW, halfH };
+}
+// Converts a screen-space pixel delta (e.g. from a drag) into the world-space delta
+// that would produce it — used for panning, where the linear part of the projection
+// matters but the camera's current translation doesn't.
+function screenDeltaToWorld(dx,dy){
+  const halfW = ISO_W*cam.zoom/2, halfH = ISO_H*cam.zoom/2;
+  const a = dx/halfW, b = dy/halfH;
+  return { x:(a+b)/2, y:(b-a)/2 };
 }
 function clampCam(){
   cam.zoom = clamp(cam.zoom, 0.5, 2.6);
@@ -1081,84 +1093,306 @@ function loadColors(){
   };
 }
 
+function hexA(hex, a){
+  const h = hex.replace('#','');
+  const r=parseInt(h.slice(0,2),16), g=parseInt(h.slice(2,4),16), b=parseInt(h.slice(4,6),16);
+  return `rgba(${r},${g},${b},${a})`;
+}
+function pick(arr, sd){ return arr[Math.floor(((sd%1+1)%1)*arr.length)%arr.length]; }
+function shade(hex, factor){
+  const h=hex.replace('#','');
+  const r=Math.max(0,Math.min(255,Math.round(parseInt(h.slice(0,2),16)*factor)));
+  const g=Math.max(0,Math.min(255,Math.round(parseInt(h.slice(2,4),16)*factor)));
+  const b=Math.max(0,Math.min(255,Math.round(parseInt(h.slice(4,6),16)*factor)));
+  return `rgb(${r},${g},${b})`;
+}
+
+/* ---- iso primitives ---- */
+function isoPts(cx,cy,hw,hh){
+  return [{x:cx,y:cy-hh},{x:cx+hw,y:cy},{x:cx,y:cy+hh},{x:cx-hw,y:cy}]; // N,E,S,W
+}
+function fillPts(pts,color){
+  ctx.fillStyle=color;
+  ctx.beginPath(); ctx.moveTo(pts[0].x,pts[0].y);
+  for(let k=1;k<pts.length;k++) ctx.lineTo(pts[k].x,pts[k].y);
+  ctx.closePath(); ctx.fill();
+}
+function drawDiamond(cx,cy,hw,hh,color){ fillPts(isoPts(cx,cy,hw,hh), color); }
+function strokeDiamond(cx,cy,hw,hh,color,lw){
+  const pts = isoPts(cx,cy,hw,hh);
+  ctx.strokeStyle=color; ctx.lineWidth=lw;
+  ctx.beginPath(); ctx.moveTo(pts[0].x,pts[0].y);
+  for(let k=1;k<pts.length;k++) ctx.lineTo(pts[k].x,pts[k].y);
+  ctx.closePath(); ctx.stroke();
+}
+// Flat-topped volumetric box: ground footprint diamond at (cx,cy), half-extents fw,fh, rising `height` px.
+// Returns the elevated top diamond's 4 points (N,E,S,W) so callers can add roofs/signage on top of it.
+function drawBox(cx,cy,fw,fh,height,color){
+  const base = isoPts(cx,cy,fw,fh);
+  const top = isoPts(cx,cy-height,fw,fh);
+  fillPts([base[1],base[2],top[2],top[1]], shade(color,0.6));  // right (E-S) face — darkest
+  fillPts([base[3],base[2],top[2],top[3]], shade(color,0.8));  // left (W-S) face — mid
+  fillPts(top, shade(color,1.08));                              // top face — brightest
+  return top;
+}
+function groundShadow(cx,cy,hw,hh){
+  ctx.fillStyle='rgba(20,28,14,.28)';
+  ctx.beginPath(); ctx.ellipse(cx, cy+hh*0.18, hw*0.95, hh*0.55, 0,0,Math.PI*2); ctx.fill();
+}
+
+function drawTree(cx,cy,r,sd){
+  ctx.fillStyle = 'rgba(20,30,15,.22)';
+  ctx.beginPath(); ctx.ellipse(cx, cy+r*0.12, r*0.5, r*0.2, 0,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle = '#5c4328';
+  ctx.fillRect(cx-r*0.07, cy-r*0.55, r*0.14, r*0.6);
+  const greens = ['#5a7d3a','#6b8f45','#4d6e30'];
+  ctx.fillStyle = pick(greens, sd);
+  ctx.beginPath(); ctx.arc(cx, cy-r*0.95, r*0.54, 0, Math.PI*2); ctx.fill();
+  ctx.fillStyle = pick(greens, sd+0.33);
+  ctx.beginPath(); ctx.arc(cx-r*0.32, cy-r*0.64, r*0.4, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(cx+r*0.34, cy-r*0.67, r*0.38, 0, Math.PI*2); ctx.fill();
+}
+
+function drawRoad(cx,cy,hw,hh,x,y){
+  drawDiamond(cx,cy,hw,hh,'#6e7278');
+  strokeDiamond(cx,cy,hw*0.97,hh*0.97,'#878d93',Math.max(1,hh*0.1));
+  const connR = inb(x+1,y) && grid[idx(x+1,y)].type==='road';
+  const connD = inb(x,y+1) && grid[idx(x,y+1)].type==='road';
+  ctx.strokeStyle = '#e8cf5a';
+  ctx.lineWidth = Math.max(1,hh*0.12);
+  ctx.setLineDash([hh*0.5, hh*0.4]);
+  ctx.beginPath();
+  if(connR || !connD){ ctx.moveTo(cx-hw*0.85,cy-hh*0.85); ctx.lineTo(cx+hw*0.85,cy+hh*0.85); }
+  if(connD || !connR){ ctx.moveTo(cx-hw*0.85,cy+hh*0.85); ctx.lineTo(cx+hw*0.85,cy-hh*0.85); }
+  ctx.stroke();
+  ctx.setLineDash([]);
+}
+
+function drawHouse(cx,cy,hw,hh,level,sd){
+  const fw=hw*0.66, fh=hh*0.66;
+  const height = hh*(1.7+level*1.05);
+  groundShadow(cx,cy,hw,hh);
+  const walls=['#d8c9a3','#cdbd97','#c7c0ab','#d1b98f'];
+  const top = drawBox(cx,cy,fw,fh,height,pick(walls,sd));
+
+  const winCol = sd>0.6 ? '#ffd974' : '#bcd9e8';
+  const wS = Math.max(1.5,fw*0.16);
+  ctx.fillStyle = winCol;
+  ctx.fillRect(cx+fw*0.26, cy-height+hh*0.05, wS, wS);
+  ctx.fillRect(cx-fw*0.5, cy-height+hh*0.1, wS, wS);
+  ctx.fillStyle = '#4a3524';
+  ctx.fillRect(cx+fw*0.05, cy-height*0.45, fw*0.2, height*0.45);
+
+  const roofH = hh*(1.0+level*0.14);
+  const ridge = {x:cx, y:cy-height-roofH};
+  const roofs=['#8c3f34','#6e4b36','#5c5f63','#7a4a2d'];
+  const roofColor = pick(roofs, sd+0.4);
+  fillPts([top[2],top[1],ridge], shade(roofColor,0.7));
+  fillPts([top[3],top[2],ridge], shade(roofColor,0.95));
+  if(level>=2){
+    ctx.fillStyle='#8a8f94';
+    ctx.fillRect(cx+fw*0.5, ridge.y+roofH*0.1, fw*0.09, roofH*0.6);
+  }
+}
+
+function drawShop(cx,cy,hw,hh,level,sd){
+  const fw=hw*0.72, fh=hh*0.72;
+  const height = hh*(2.1+level*1.9);
+  groundShadow(cx,cy,hw,hh);
+  if(level<3){
+    const top = drawBox(cx,cy,fw,fh,height,'#ece6d4');
+    const awnings=['#b5473f','#2f6fae','#2f8f5e','#c07f1f'];
+    fillPts(top, shade(pick(awnings,sd), 1.05));
+    ctx.fillStyle = '#bcd9e8';
+    ctx.fillRect(cx+fw*0.16, cy-height*0.62, fw*0.3, height*0.32);
+    ctx.fillRect(cx-fw*0.46, cy-height*0.62, fw*0.3, height*0.32);
+    ctx.strokeStyle='rgba(255,255,255,.6)'; ctx.lineWidth=1;
+    ctx.strokeRect(cx+fw*0.16, cy-height*0.62, fw*0.3, height*0.32);
+    ctx.strokeRect(cx-fw*0.46, cy-height*0.62, fw*0.3, height*0.32);
+  } else {
+    const top = drawBox(cx,cy,fw,fh,height,'#9fb7c4');
+    ctx.fillStyle='rgba(255,255,255,.2)';
+    const rows = Math.max(2,Math.round(height/(hh*0.55)));
+    for(let row=0; row<rows; row++){
+      const ry = cy-height+hh*0.25+row*hh*0.55;
+      ctx.fillRect(cx+fw*0.08, ry, fw*0.55, hh*0.24);
+      ctx.fillRect(cx-fw*0.63, ry, fw*0.55, hh*0.24);
+    }
+    ctx.fillStyle='#c7d3d9';
+    ctx.fillRect(cx-fw*0.15, cy-height-hh*0.5, fw*0.3, hh*0.5);
+  }
+}
+
+function drawFactory(cx,cy,hw,hh,level,sd,time){
+  const fw=hw*0.82, fh=hh*0.82;
+  const height = hh*(1.3+level*0.85);
+  groundShadow(cx,cy,hw,hh);
+  const walls=['#aab0b6','#9ea6ae','#b7a187'];
+  const top = drawBox(cx,cy,fw,fh,height,pick(walls,sd));
+  ctx.strokeStyle='rgba(0,0,0,.22)'; ctx.lineWidth=Math.max(1,hh*0.07);
+  for(const k of [-0.32,0,0.32]){
+    ctx.beginPath(); ctx.moveTo(cx+k*fw, cy-height-fh*0.55); ctx.lineTo(cx+k*fw, cy-height+fh*0.55); ctx.stroke();
+  }
+  ctx.fillStyle='#565d64';
+  ctx.fillRect(cx-fw*0.16, cy-height*0.4, fw*0.32, height*0.4);
+  if(level>=2){
+    const stacks = level>=3?2:1;
+    for(let s=0;s<stacks;s++){
+      const sx = cx + (stacks===1? fw*0.35 : (s===0?-fw*0.35:fw*0.35));
+      const stackH = hh*1.8;
+      const stackTop = cy-height-stackH;
+      ctx.fillStyle='#6d757c';
+      ctx.fillRect(sx-hw*0.07, stackTop, hw*0.14, stackH);
+      const puff = ((time*0.00035)+s*0.5)%1;
+      ctx.fillStyle = `rgba(120,120,120,${0.4*(1-puff)})`;
+      ctx.beginPath(); ctx.arc(sx, stackTop-hh*puff*2.2, hh*(0.3+puff*0.5),0,Math.PI*2); ctx.fill();
+    }
+  }
+}
+
+function drawBuilding(cx,cy,hw,hh,tile,i,time){
+  const sd = seedFor(i);
+  if(tile.zone==='R') drawHouse(cx,cy,hw,hh,tile.level,sd);
+  else if(tile.zone==='C') drawShop(cx,cy,hw,hh,tile.level,sd);
+  else drawFactory(cx,cy,hw,hh,tile.level,sd,time);
+
+  const cap = CAP[tile.zone][tile.level]||1;
+  if(tile.occupancy/cap < 0.3){
+    ctx.fillStyle = 'rgba(55,48,36,.4)';
+    ctx.beginPath();
+    ctx.moveTo(cx-hw*0.85, cy+hh*0.2);
+    ctx.lineTo(cx+hw*0.85, cy+hh*0.2);
+    ctx.lineTo(cx+hw*0.5, cy-hh*7);
+    ctx.lineTo(cx-hw*0.5, cy-hh*7);
+    ctx.closePath(); ctx.fill();
+  }
+}
+
+function drawPlant(cx,cy,hw,hh,t,time){
+  groundShadow(cx,cy,hw,hh);
+  if(t.kind==='coal'){
+    const height = hh*2.1;
+    drawBox(cx,cy,hw*0.76,hh*0.76,height,'#9aa3ab');
+    [[-0.26,2.5],[0.16,3.1]].forEach(([ox,hMul],k)=>{
+      const sx=cx+ox*hw;
+      const stackH=hh*hMul;
+      const stackTop=cy-height-stackH;
+      ctx.fillStyle='#737b82';
+      ctx.fillRect(sx-hw*0.07, stackTop, hw*0.14, stackH);
+      const puff=(time*0.0004+k*0.5)%1;
+      ctx.fillStyle=`rgba(130,130,130,${0.4*(1-puff)})`;
+      ctx.beginPath(); ctx.arc(sx, stackTop-hh*puff*2.2, hh*(0.35+puff*0.5),0,Math.PI*2); ctx.fill();
+    });
+  } else {
+    const poleH=hh*4.6;
+    ctx.strokeStyle='#dfe6ec'; ctx.lineWidth=Math.max(2,hw*0.08);
+    ctx.beginPath(); ctx.moveTo(cx,cy); ctx.lineTo(cx,cy-poleH); ctx.stroke();
+    const ang=time*0.0028;
+    ctx.save(); ctx.translate(cx,cy-poleH); ctx.rotate(ang);
+    ctx.fillStyle='#cfd8df';
+    for(let b=0;b<3;b++){ ctx.save(); ctx.rotate(b*Math.PI*2/3); ctx.beginPath(); ctx.ellipse(0,-hh*0.85,hw*0.2,hh*0.85,0,0,Math.PI*2); ctx.fill(); ctx.restore(); }
+    ctx.fillStyle='#8a97a0'; ctx.beginPath(); ctx.arc(0,0,hw*0.18,0,Math.PI*2); ctx.fill();
+    ctx.restore();
+  }
+  ctx.fillStyle = t.powered? '#2f9fe0' : '#e8505b';
+  ctx.beginPath(); ctx.arc(cx+hw*0.65, cy-hh*2.1, Math.max(2,hw*0.13),0,Math.PI*2); ctx.fill();
+  ctx.strokeStyle='#fff'; ctx.lineWidth=1; ctx.stroke();
+}
+
+function drawCivic(cx,cy,hw,hh,t){
+  groundShadow(cx,cy,hw,hh);
+  const height = hh*1.7;
+  const top = drawBox(cx,cy,hw*0.68,hh*0.68,height,'#eae6da');
+  const cols = {fire:'#c84a40', police:'#2f72b0', school:'#7c4fd1', hospital:'#14967f'};
+  const col = cols[t.kind];
+  fillPts(top, shade(col,1.05));
+  ctx.fillStyle='#fff';
+  ctx.beginPath(); ctx.arc(cx, cy-height+hh*0.3, hw*0.22,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle=col;
+  ctx.beginPath(); ctx.arc(cx, cy-height+hh*0.3, hw*0.15,0,Math.PI*2); ctx.fill();
+}
+
+function drawPark(cx,cy,hw,hh,i){
+  drawDiamond(cx,cy,hw*0.92,hh*0.92,'rgba(255,255,255,.22)');
+  [[-0.3,-0.25],[0.26,-0.08],[0.0,0.22],[-0.14,0.1]].forEach(([ox,oy],k)=>{
+    const sd=seedFor(i*5+k);
+    drawTree(cx+ox*hw*1.5, cy+oy*hh*1.5, hh*1.0, sd);
+  });
+}
+
 function draw(t){
   const r = viewport.getBoundingClientRect();
   ctx.save();
   ctx.scale(dpr,dpr);
   ctx.clearRect(0,0,r.width,r.height);
 
-  const scale = TILE*cam.zoom;
-  const topLeft = screenToWorld(0,0);
-  const botRight = screenToWorld(r.width,r.height);
-  const x0 = Math.max(0, Math.floor(topLeft.x)-1);
-  const y0 = Math.max(0, Math.floor(topLeft.y)-3); // extra rows: tall buildings poke above their own tile
-  const x1 = Math.min(GRID-1, Math.ceil(botRight.x)+1);
-  const y1 = Math.min(GRID-1, Math.ceil(botRight.y)+1);
+  const halfW = ISO_W*cam.zoom/2, halfH = ISO_H*cam.zoom/2;
 
-  const showGrid = scale>16;
+  const corners = [
+    screenToWorld(0,0), screenToWorld(r.width,0),
+    screenToWorld(0,r.height), screenToWorld(r.width,r.height)
+  ];
+  let minX=Infinity,maxX=-Infinity,minY=Infinity,maxY=-Infinity;
+  for(const c of corners){ minX=Math.min(minX,c.x); maxX=Math.max(maxX,c.x); minY=Math.min(minY,c.y); maxY=Math.max(maxY,c.y); }
+  const x0 = Math.max(0, Math.floor(minX)-3); // extra margin: tall buildings poke toward lower x+y
+  const x1 = Math.min(GRID-1, Math.ceil(maxX)+1);
+  const y0 = Math.max(0, Math.floor(minY)-3);
+  const y1 = Math.min(GRID-1, Math.ceil(maxY)+1);
 
-  for(let y=y0;y<=y1;y++){
-    for(let x=x0;x<=x1;x++){
+  const showGrid = halfH>9;
+
+  // Painter's algorithm: tiles must be drawn in non-decreasing (x+y) order so nearer
+  // (further "south") tiles correctly draw over the tops of taller buildings behind them.
+  for(let d=x0+y0; d<=x1+y1; d++){
+    const xs = Math.max(x0, d-y1), xe = Math.min(x1, d-y0);
+    for(let x=xs; x<=xe; x++){
+      const y = d-x;
       const i = idx(x,y);
       const t2 = grid[i];
-      const s = worldToScreen(x,y);
-      const px = s.x, py = s.y;
+      const c = worldToScreen(x+0.5, y+0.5);
+      const cx=c.x, cy=c.y;
 
-      // terrain
       if(t2.terrain==='water'){
         const shimmer = 0.5+0.5*Math.sin(t*0.0014 + (x+y)*0.4);
-        ctx.fillStyle = COLORS.water;
-        ctx.fillRect(px,py,scale,scale);
-        ctx.fillStyle = `rgba(255,255,255,${0.04+shimmer*0.08})`;
-        ctx.fillRect(px,py,scale,scale);
+        drawDiamond(cx,cy,halfW,halfH,COLORS.water);
+        drawDiamond(cx,cy,halfW,halfH,`rgba(255,255,255,${0.04+shimmer*0.08})`);
       } else {
-        ctx.fillStyle = ((x+y)%2===0) ? COLORS.grass : COLORS.grass2;
-        ctx.fillRect(px,py,scale,scale);
-        if(t2.tree){
-          drawTree(px+scale*0.5, py+scale*0.56, scale*0.46, seedFor(i));
-        }
+        drawDiamond(cx,cy,halfW,halfH, ((x+y)%2===0) ? COLORS.grass : COLORS.grass2);
+        if(t2.tree) drawTree(cx, cy-halfH*0.2, halfH*1.3, seedFor(i));
       }
 
-      if(showGrid){
-        ctx.strokeStyle = 'rgba(255,255,255,.14)';
-        ctx.lineWidth = 1;
-        ctx.strokeRect(px+0.5,py+0.5,scale-1,scale-1);
-      }
+      if(showGrid) strokeDiamond(cx,cy,halfW,halfH,'rgba(255,255,255,.12)',1);
 
       if(t2.type==='zone'){
         if(t2.level>0){
-          drawBuilding(px,py,scale,t2,i,t);
+          drawBuilding(cx,cy,halfW,halfH,t2,i,t);
         } else {
-          ctx.fillStyle = hexA(ZONE_HEX[t2.zone], 0.18);
-          ctx.fillRect(px,py,scale,scale);
-          ctx.strokeStyle = hexA(ZONE_HEX[t2.zone],0.7);
-          ctx.setLineDash([3,3]);
-          ctx.strokeRect(px+scale*0.14,py+scale*0.14,scale*0.72,scale*0.72);
-          ctx.setLineDash([]);
+          drawDiamond(cx,cy,halfW*0.78,halfH*0.78, hexA(ZONE_HEX[t2.zone],0.22));
+          strokeDiamond(cx,cy,halfW*0.55,halfH*0.55, hexA(ZONE_HEX[t2.zone],0.8),1.5);
         }
-        if(!t2.powered){
+        if(!t2.powered && halfH>8){
           ctx.fillStyle='rgba(232,80,91,.9)';
-          ctx.font = `${Math.max(8,scale*0.3)}px sans-serif`;
+          ctx.font = `${Math.max(8,halfH*0.9)}px sans-serif`;
           ctx.textAlign='center'; ctx.textBaseline='middle';
-          if(scale>16) ctx.fillText('⚡', px+scale*0.16, py+scale*0.87);
+          ctx.fillText('⚡', cx-halfW*0.55, cy+halfH*0.15);
         }
       } else if(t2.type==='road'){
-        drawRoad(px,py,scale,x,y);
+        drawRoad(cx,cy,halfW,halfH,x,y);
       } else if(t2.type==='plant'){
-        drawPlant(px,py,scale,t2,t);
+        drawPlant(cx,cy,halfW,halfH,t2,t);
       } else if(t2.type==='civic'){
-        drawCivic(px,py,scale,t2);
+        drawCivic(cx,cy,halfW,halfH,t2);
       } else if(t2.type==='park'){
-        drawPark(px,py,scale,i);
+        drawPark(cx,cy,halfW,halfH,i);
       }
 
       if(t2.fire){
         const flick = 0.6+0.4*Math.sin(t*0.02+i);
         ctx.fillStyle = `rgba(232,80,91,${0.55*flick})`;
         ctx.beginPath();
-        ctx.moveTo(px+scale*0.5, py+scale*0.05);
-        ctx.lineTo(px+scale*0.76, py+scale*0.62);
-        ctx.lineTo(px+scale*0.24, py+scale*0.62);
+        ctx.moveTo(cx, cy-halfH*2.4);
+        ctx.lineTo(cx+halfW*0.4, cy-halfH*0.6);
+        ctx.lineTo(cx-halfW*0.4, cy-halfH*0.6);
         ctx.closePath(); ctx.fill();
       }
     }
@@ -1167,339 +1401,21 @@ function draw(t){
   // pending (staged, unconfirmed) edits — touch draw-then-confirm preview
   if(pendingEdits.size>0){
     for(const {x:px2,y:py2} of pendingEdits.values()){
-      const s = worldToScreen(px2,py2);
-      ctx.fillStyle = 'rgba(255,176,32,.3)';
-      ctx.fillRect(s.x,s.y,scale,scale);
-      ctx.strokeStyle = 'rgba(255,176,32,.95)';
-      ctx.lineWidth = Math.max(1,scale*0.06);
-      ctx.setLineDash([scale*0.14, scale*0.1]);
-      ctx.strokeRect(s.x+1,s.y+1,scale-2,scale-2);
+      const c = worldToScreen(px2+0.5,py2+0.5);
+      drawDiamond(c.x,c.y,halfW*0.96,halfH*0.96,'rgba(255,176,32,.32)');
+      ctx.setLineDash([halfH*0.5, halfH*0.35]);
+      strokeDiamond(c.x,c.y,halfW*0.96,halfH*0.96,'rgba(255,176,32,.95)', Math.max(1,halfH*0.16));
       ctx.setLineDash([]);
     }
   }
 
   // hover/selection highlight
   if(hoverTile && inb(hoverTile.x,hoverTile.y)){
-    const s = worldToScreen(hoverTile.x,hoverTile.y);
-    ctx.strokeStyle = COLORS.accent;
-    ctx.lineWidth = 2.5;
-    const half = Math.floor(brushSize/2);
-    const bx = s.x - half*scale, by = s.y - half*scale;
-    ctx.strokeRect(bx+1,by+1, scale*brushSize-2, scale*brushSize-2);
+    const c = worldToScreen(hoverTile.x+0.5, hoverTile.y+0.5);
+    strokeDiamond(c.x,c.y, halfW*brushSize, halfH*brushSize, COLORS.accent, 2.5);
   }
 
   ctx.restore();
-}
-
-function hexA(hex, a){
-  const h = hex.replace('#','');
-  const r=parseInt(h.slice(0,2),16), g=parseInt(h.slice(2,4),16), b=parseInt(h.slice(4,6),16);
-  return `rgba(${r},${g},${b},${a})`;
-}
-function pick(arr, sd){ return arr[Math.floor(((sd%1+1)%1)*arr.length)%arr.length]; }
-
-function drawTree(cx,cy,r,sd){
-  ctx.fillStyle = 'rgba(30,45,20,.22)';
-  ctx.beginPath(); ctx.ellipse(cx, cy+r*0.72, r*0.5, r*0.16, 0,0,Math.PI*2); ctx.fill();
-  ctx.fillStyle = '#6b4a2a';
-  ctx.fillRect(cx-r*0.07, cy+r*0.08, r*0.14, r*0.5);
-  const greens = ['#3c9a44','#4aa84f','#2f8a3c'];
-  ctx.fillStyle = pick(greens, sd);
-  ctx.beginPath(); ctx.arc(cx, cy-r*0.18, r*0.52, 0, Math.PI*2); ctx.fill();
-  ctx.fillStyle = pick(greens, sd+0.33);
-  ctx.beginPath(); ctx.arc(cx-r*0.3, cy+r*0.05, r*0.38, 0, Math.PI*2); ctx.fill();
-  ctx.beginPath(); ctx.arc(cx+r*0.32, cy+r*0.02, r*0.36, 0, Math.PI*2); ctx.fill();
-}
-
-function drawRoad(px,py,scale,x,y){
-  ctx.fillStyle = '#787f88';
-  ctx.fillRect(px,py,scale,scale);
-  ctx.fillStyle = '#9aa1a8';
-  const sw = Math.max(1,scale*0.05);
-  ctx.fillRect(px,py,scale,sw);
-  ctx.fillRect(px,py,sw,scale);
-  ctx.fillRect(px+scale-sw,py,sw,scale);
-  ctx.fillRect(px,py+scale-sw,scale,sw);
-  ctx.strokeStyle = '#f4d35e';
-  ctx.lineWidth = Math.max(1,scale*0.045);
-  ctx.setLineDash([scale*0.12, scale*0.1]);
-  const connR = inb(x+1,y) && grid[idx(x+1,y)].type==='road';
-  const connD = inb(x,y+1) && grid[idx(x,y+1)].type==='road';
-  ctx.beginPath();
-  if(connR || !connD){ ctx.moveTo(px+scale*0.08,py+scale*0.5); ctx.lineTo(px+scale*0.92,py+scale*0.5); }
-  if(connD || !connR){ ctx.moveTo(px+scale*0.5,py+scale*0.08); ctx.lineTo(px+scale*0.5,py+scale*0.92); }
-  ctx.stroke();
-  ctx.setLineDash([]);
-}
-
-function drawWindow(x,y,s,lit){
-  ctx.fillStyle = lit ? '#ffe17a' : '#bfe6f5';
-  ctx.fillRect(x,y,s,s);
-  ctx.strokeStyle='rgba(255,255,255,.7)'; ctx.lineWidth=1; ctx.strokeRect(x,y,s,s);
-}
-
-function drawHouse(px,py,scale,level,sd){
-  const marginX = scale*0.1;
-  const w = scale-marginX*2;
-  const baseY = py+scale*0.95;
-  const bodyH = scale*(0.5+level*0.3);
-  const bodyTop = baseY-bodyH;
-  const roofH = scale*(0.24+level*0.04);
-
-  ctx.fillStyle='rgba(30,40,20,.2)';
-  ctx.beginPath(); ctx.ellipse(px+scale*0.5, baseY+scale*0.03, w*0.56, scale*0.09,0,0,Math.PI*2); ctx.fill();
-
-  const walls = ['#f3dcae','#f1cf9c','#e9e2d4','#eccb9a'];
-  ctx.fillStyle = pick(walls, sd);
-  ctx.fillRect(px+marginX, bodyTop, w, bodyH);
-  ctx.fillStyle = 'rgba(0,0,0,.08)';
-  ctx.fillRect(px+marginX+w*0.8, bodyTop, w*0.2, bodyH);
-  ctx.strokeStyle = 'rgba(0,0,0,.12)'; ctx.lineWidth=1;
-  ctx.strokeRect(px+marginX+0.5, bodyTop+0.5, w-1, bodyH-1);
-
-  const roofs = ['#c0543f','#a8473a','#8a5a3b','#b8632f'];
-  ctx.fillStyle = pick(roofs, sd+0.4);
-  ctx.beginPath();
-  ctx.moveTo(px+marginX-scale*0.05, bodyTop);
-  ctx.lineTo(px+scale*0.5, bodyTop-roofH);
-  ctx.lineTo(px+marginX+w+scale*0.05, bodyTop);
-  ctx.closePath(); ctx.fill();
-
-  if(level>=2){
-    ctx.fillStyle = '#8a8f94';
-    ctx.fillRect(px+marginX+w*0.72, bodyTop-roofH*0.55, scale*0.07, roofH*0.7);
-  }
-
-  ctx.fillStyle = '#6b4226';
-  const doorW = w*0.17, doorH = bodyH*0.4;
-  ctx.fillRect(px+scale*0.5-doorW/2, baseY-doorH, doorW, doorH);
-
-  const winCols = level+1;
-  const winSize = scale*0.1;
-  const litIdx = Math.floor(sd*97)%winCols;
-  for(let k=0;k<winCols;k++){
-    const wx = px+marginX+w*(0.15+(k/(winCols-1))*0.7)-winSize/2;
-    drawWindow(wx, bodyTop+bodyH*0.22, winSize, k===litIdx);
-    if(level>=2) drawWindow(wx, bodyTop+bodyH*0.58, winSize, false);
-  }
-}
-
-function drawShop(px,py,scale,level,sd){
-  const marginX = scale*0.08;
-  const w = scale-marginX*2;
-  const baseY = py+scale*0.95;
-  const bodyH = scale*(0.55+level*0.5);
-  const bodyTop = baseY-bodyH;
-
-  ctx.fillStyle='rgba(30,40,20,.2)';
-  ctx.beginPath(); ctx.ellipse(px+scale*0.5, baseY+scale*0.03, w*0.58, scale*0.09,0,0,Math.PI*2); ctx.fill();
-
-  if(level<3){
-    ctx.fillStyle = '#f5f1e8';
-    ctx.fillRect(px+marginX,bodyTop,w,bodyH);
-    ctx.strokeStyle='rgba(0,0,0,.1)'; ctx.lineWidth=1; ctx.strokeRect(px+marginX+0.5,bodyTop+0.5,w-1,bodyH-1);
-
-    const glassY = bodyTop+bodyH*0.4, glassH = bodyH*0.54;
-    ctx.fillStyle = '#bfe0ef';
-    ctx.fillRect(px+marginX+w*0.06, glassY, w*0.88, glassH);
-    ctx.strokeStyle='#89b4c7'; ctx.lineWidth=Math.max(1,scale*0.02);
-    const bays = level===1?2:3;
-    for(let b=1;b<bays;b++){
-      const mx = px+marginX+w*0.06+(w*0.88)*(b/bays);
-      ctx.beginPath(); ctx.moveTo(mx,glassY); ctx.lineTo(mx,glassY+glassH); ctx.stroke();
-    }
-
-    const awnings = ['#e2544a','#2f8fef','#3fae63','#ffb020'];
-    const awningColor = pick(awnings, sd);
-    ctx.fillStyle = awningColor;
-    const awY = bodyTop+bodyH*0.3, awH = bodyH*0.1;
-    ctx.fillRect(px+marginX-scale*0.02, awY, w+scale*0.04, awH);
-    ctx.fillStyle='rgba(255,255,255,.5)';
-    const stripeW = (w+scale*0.04)/6;
-    for(let si=0;si<6;si+=2) ctx.fillRect(px+marginX-scale*0.02+si*stripeW, awY, stripeW, awH);
-
-    ctx.fillStyle = '#2b3440';
-    ctx.fillRect(px+marginX+w*0.12, bodyTop-scale*0.06, w*0.76, scale*0.1);
-  } else {
-    ctx.fillStyle = '#dcecf5';
-    ctx.fillRect(px+marginX,bodyTop,w,bodyH);
-    ctx.strokeStyle='rgba(0,0,0,.1)'; ctx.lineWidth=1; ctx.strokeRect(px+marginX+0.5,bodyTop+0.5,w-1,bodyH-1);
-    ctx.fillStyle='rgba(60,120,160,.4)';
-    const cols=3, rows=Math.max(3,Math.round(bodyH/(scale*0.17)));
-    const cw=(w*0.82)/cols, rh=(bodyH-scale*0.12)/rows;
-    for(let rr=0; rr<rows; rr++) for(let cc=0; cc<cols; cc++){
-      const gx = px+marginX+w*0.09+cc*cw, gy = bodyTop+scale*0.06+rr*rh;
-      ctx.fillRect(gx,gy,cw*0.78,rh*0.62);
-    }
-    ctx.fillStyle='#b7c6cf';
-    ctx.fillRect(px+marginX+w*0.1, bodyTop-scale*0.05, w*0.8, scale*0.07);
-    ctx.strokeStyle='#8a97a0'; ctx.lineWidth=Math.max(1,scale*0.03);
-    ctx.beginPath(); ctx.moveTo(px+scale*0.5,bodyTop-scale*0.05); ctx.lineTo(px+scale*0.5,bodyTop-scale*0.24); ctx.stroke();
-  }
-}
-
-function drawFactory(px,py,scale,level,sd,time){
-  const marginX = scale*0.06;
-  const w = scale-marginX*2;
-  const baseY = py+scale*0.95;
-  const bodyH = scale*(0.5+level*0.24);
-  const bodyTop = baseY-bodyH;
-
-  ctx.fillStyle='rgba(30,40,20,.22)';
-  ctx.beginPath(); ctx.ellipse(px+scale*0.5, baseY+scale*0.03, w*0.6, scale*0.1,0,0,Math.PI*2); ctx.fill();
-
-  const walls=['#c2c8ce','#b9c0c6','#ccae92'];
-  ctx.fillStyle = pick(walls, sd);
-  ctx.fillRect(px+marginX,bodyTop,w,bodyH);
-  ctx.strokeStyle='rgba(0,0,0,.14)'; ctx.lineWidth=1;
-  for(let ly=bodyTop+scale*0.1; ly<baseY-2; ly+=scale*0.1){
-    ctx.beginPath(); ctx.moveTo(px+marginX,ly); ctx.lineTo(px+marginX+w,ly); ctx.stroke();
-  }
-
-  ctx.fillStyle='#8d96a0';
-  const teeth = level+1;
-  ctx.beginPath();
-  ctx.moveTo(px+marginX,bodyTop);
-  for(let tI=0;tI<teeth;tI++){
-    const segW=w/teeth;
-    ctx.lineTo(px+marginX+segW*tI+segW*0.5, bodyTop-scale*0.17);
-    ctx.lineTo(px+marginX+segW*(tI+1), bodyTop);
-  }
-  ctx.lineTo(px+marginX,bodyTop);
-  ctx.closePath(); ctx.fill();
-
-  ctx.fillStyle='#565d64';
-  ctx.fillRect(px+scale*0.5-w*0.12, baseY-bodyH*0.42, w*0.24, bodyH*0.42);
-
-  if(level>=2){
-    const stacks = level>=3?2:1;
-    for(let s=0;s<stacks;s++){
-      const sx = px+marginX+w*(stacks===1?0.72:(0.2+s*0.5));
-      ctx.fillStyle='#75808a';
-      ctx.fillRect(sx, bodyTop-scale*0.46, scale*0.12, scale*0.46);
-      ctx.fillStyle='#8a939c';
-      ctx.fillRect(sx-scale*0.015, bodyTop-scale*0.46, scale*0.15, scale*0.05);
-      const puff = ((time*0.00035)+s*0.5)%1;
-      ctx.fillStyle = `rgba(130,130,130,${0.4*(1-puff)})`;
-      ctx.beginPath();
-      ctx.arc(sx+scale*0.06, bodyTop-scale*0.46-scale*puff*1.1, scale*(0.07+puff*0.13),0,Math.PI*2);
-      ctx.fill();
-    }
-  }
-}
-
-function drawBuilding(px,py,scale,tile,i,time){
-  const sd = seedFor(i);
-  if(tile.zone==='R') drawHouse(px,py,scale,tile.level,sd);
-  else if(tile.zone==='C') drawShop(px,py,scale,tile.level,sd);
-  else drawFactory(px,py,scale,tile.level,sd,time);
-
-  const cap = CAP[tile.zone][tile.level]||1;
-  const occFrac = tile.occupancy/cap;
-  if(occFrac < 0.3){
-    let bodyH;
-    if(tile.zone==='R') bodyH = scale*(0.5+tile.level*0.3);
-    else if(tile.zone==='C') bodyH = scale*(0.55+tile.level*0.5);
-    else bodyH = scale*(0.5+tile.level*0.24);
-    const baseY = py+scale*0.95, bodyTop = baseY-bodyH-scale*0.3;
-    ctx.fillStyle = 'rgba(70,62,48,.42)';
-    ctx.fillRect(px+scale*0.03, bodyTop, scale*0.94, baseY-bodyTop);
-  }
-}
-
-function drawPlant(px,py,scale,t,time){
-  const baseY = py+scale*0.95;
-  ctx.fillStyle='rgba(30,40,20,.2)';
-  ctx.beginPath(); ctx.ellipse(px+scale*0.5, baseY+scale*0.03, scale*0.46, scale*0.09,0,0,Math.PI*2); ctx.fill();
-
-  if(t.kind==='coal'){
-    const bodyH = scale*0.75, bodyTop = baseY-bodyH;
-    ctx.fillStyle = '#9aa3ab';
-    ctx.fillRect(px+scale*0.1, bodyTop, scale*0.8, bodyH);
-    ctx.strokeStyle='rgba(0,0,0,.15)'; ctx.lineWidth=1; ctx.strokeRect(px+scale*0.1+0.5,bodyTop+0.5,scale*0.8-1,bodyH-1);
-    ctx.fillStyle='#75808a';
-    ctx.fillRect(px+scale*0.22, bodyTop-scale*0.4, scale*0.14, scale*0.4);
-    ctx.fillRect(px+scale*0.54, bodyTop-scale*0.5, scale*0.14, scale*0.5);
-    [[px+scale*0.29,0.4],[px+scale*0.61,0.5]].forEach(([cx,baseh])=>{
-      const puff=(time*0.0004+baseh)%1;
-      ctx.fillStyle=`rgba(130,130,130,${0.4*(1-puff)})`;
-      ctx.beginPath(); ctx.arc(cx, bodyTop-scale*baseh-scale*puff*1.1, scale*(0.08+puff*0.14),0,Math.PI*2); ctx.fill();
-    });
-  } else {
-    const poleBase = baseY, poleTop = py-scale*0.3;
-    ctx.strokeStyle='#e7edf3'; ctx.lineWidth=Math.max(2,scale*0.07);
-    ctx.beginPath(); ctx.moveTo(px+scale*0.5, poleBase); ctx.lineTo(px+scale*0.5, poleTop); ctx.stroke();
-    const ang = time*0.0028;
-    ctx.save();
-    ctx.translate(px+scale*0.5, poleTop);
-    ctx.rotate(ang);
-    ctx.fillStyle = '#cfd8df';
-    for(let b=0;b<3;b++){
-      ctx.save(); ctx.rotate(b*Math.PI*2/3);
-      ctx.beginPath(); ctx.ellipse(0,-scale*0.16,scale*0.05,scale*0.16,0,0,Math.PI*2); ctx.fill();
-      ctx.restore();
-    }
-    ctx.fillStyle='#8a97a0';
-    ctx.beginPath(); ctx.arc(0,0,scale*0.05,0,Math.PI*2); ctx.fill();
-    ctx.restore();
-  }
-  ctx.fillStyle = t.powered? '#2f9fe0' : '#e8505b';
-  ctx.beginPath(); ctx.arc(px+scale*0.86, py+scale*0.12, Math.max(2,scale*0.06),0,Math.PI*2); ctx.fill();
-  ctx.strokeStyle='#fff'; ctx.lineWidth=1; ctx.stroke();
-}
-
-function drawCivic(px,py,scale,t){
-  const baseY = py+scale*0.95;
-  const bodyH = scale*0.7, bodyTop = baseY-bodyH;
-  ctx.fillStyle='rgba(30,40,20,.2)';
-  ctx.beginPath(); ctx.ellipse(px+scale*0.5, baseY+scale*0.03, scale*0.46, scale*0.08,0,0,Math.PI*2); ctx.fill();
-
-  ctx.fillStyle = '#f4f1ea';
-  ctx.fillRect(px+scale*0.1, bodyTop, scale*0.8, bodyH);
-  ctx.strokeStyle='rgba(0,0,0,.1)'; ctx.lineWidth=1; ctx.strokeRect(px+scale*0.1+0.5,bodyTop+0.5,scale*0.8-1,bodyH-1);
-
-  const cols = {fire:'#e2544a', police:'#2f8fef', school:'#8a5cf6', hospital:'#17b3a3'};
-  const col = cols[t.kind];
-  ctx.fillStyle = col;
-  ctx.fillRect(px+scale*0.1, bodyTop, scale*0.8, scale*0.12);
-
-  ctx.fillStyle = '#7d8691';
-  ctx.fillRect(px+scale*0.35, baseY-bodyH*0.5, scale*0.3, bodyH*0.5);
-
-  ctx.fillStyle = col;
-  ctx.beginPath();
-  if(t.kind==='fire'){
-    ctx.moveTo(px+scale*0.5,bodyTop+bodyH*0.28);
-    ctx.quadraticCurveTo(px+scale*0.64,bodyTop+bodyH*0.46, px+scale*0.5,bodyTop+bodyH*0.68);
-    ctx.quadraticCurveTo(px+scale*0.36,bodyTop+bodyH*0.46, px+scale*0.5,bodyTop+bodyH*0.28);
-  } else if(t.kind==='police'){
-    ctx.moveTo(px+scale*0.5,bodyTop+bodyH*0.26);
-    ctx.lineTo(px+scale*0.64,bodyTop+bodyH*0.34);
-    ctx.lineTo(px+scale*0.61,bodyTop+bodyH*0.54);
-    ctx.lineTo(px+scale*0.5,bodyTop+bodyH*0.66);
-    ctx.lineTo(px+scale*0.39,bodyTop+bodyH*0.54);
-    ctx.lineTo(px+scale*0.36,bodyTop+bodyH*0.34);
-    ctx.closePath();
-  } else if(t.kind==='school'){
-    ctx.moveTo(px+scale*0.3, bodyTop+bodyH*0.42);
-    ctx.lineTo(px+scale*0.5, bodyTop+bodyH*0.28);
-    ctx.lineTo(px+scale*0.7, bodyTop+bodyH*0.42);
-    ctx.lineTo(px+scale*0.5, bodyTop+bodyH*0.56);
-    ctx.closePath();
-  } else {
-    ctx.rect(px+scale*0.46, bodyTop+bodyH*0.26, scale*0.08, bodyH*0.32);
-    ctx.rect(px+scale*0.38, bodyTop+bodyH*0.38, scale*0.24, bodyH*0.08);
-  }
-  ctx.fill();
-}
-
-function drawPark(px,py,scale,i){
-  ctx.fillStyle = 'rgba(255,255,255,.25)';
-  ctx.fillRect(px+scale*0.04,py+scale*0.04,scale*0.92,scale*0.92);
-  [[0.28,0.62],[0.52,0.72],[0.72,0.58],[0.45,0.4]].forEach(([fx,fy],k)=>{
-    const sd = seedFor(i*5+k);
-    drawTree(px+scale*fx, py+scale*fy, scale*0.24, sd);
-  });
 }
 
 /* ============================== LOOP ============================== */
@@ -1752,8 +1668,8 @@ function onPointerMove(e){
     const prev = downInfo;
     const dx = e.movementX||0, dy = e.movementY||0;
     if(Math.abs(e.clientX-prev.x)+Math.abs(e.clientY-prev.y) > 4) prev.moved=true;
-    const scale = TILE*cam.zoom;
-    cam.x -= dx/scale; cam.y -= dy/scale;
+    const wd = screenDeltaToWorld(dx,dy);
+    cam.x -= wd.x; cam.y -= wd.y;
     clampCam();
   } else if(dragMode==='paint' && e.pointerId===paintPointerId){
     applyToolAt(t.x,t.y);
@@ -1765,9 +1681,9 @@ function onPointerMove(e){
     const zoomFactor = dist/(pinchStart.dist||dist);
     cam.zoom = clamp(pinchStart.zoom*zoomFactor, 0.5, 2.6);
     const dx = mid.x-pinchStart.mid.x, dy = mid.y-pinchStart.mid.y;
-    const scale = TILE*cam.zoom;
-    cam.x = pinchStart.camx - dx/scale;
-    cam.y = pinchStart.camy - dy/scale;
+    const wd = screenDeltaToWorld(dx,dy);
+    cam.x = pinchStart.camx - wd.x;
+    cam.y = pinchStart.camy - wd.y;
     clampCam();
   }
 }
